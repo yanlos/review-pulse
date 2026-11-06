@@ -33,9 +33,12 @@ export function createSyncer(deps: { store: Store; github: GithubClient; now: ()
 
     const startedAt = now();
     let cursor: string | null = null;
+    let oldestSeen = Infinity;
     for (let page = 1; ; page++) {
       if (page > MAX_PAGES) {
         failedWalks.set(repo.key, { stopAt, at: now() });
+        // The stored pages still cover everything updated after the oldest row, so a shorter period can use them.
+        if (state === undefined) store.setRepoState(repo.key, { coveredSince: oldestSeen + 1, syncedAt: startedAt });
         throw tooLarge(stopAt);
       }
       const t0 = performance.now();
@@ -53,6 +56,7 @@ export function createSyncer(deps: { store: Store; github: GithubClient; now: ()
         "github page",
       );
       const last = result.rows.at(-1);
+      if (last !== undefined) oldestSeen = last.updatedAt;
       if (!result.hasNextPage || last === undefined || last.updatedAt < stopAt) break;
       cursor = result.endCursor;
     }

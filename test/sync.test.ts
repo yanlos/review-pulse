@@ -100,14 +100,16 @@ describe("sync safety", () => {
     assert.equal(calls.length, 2);
   });
 
-  it("stops at the page cap, keeps coverage unchanged and remembers the failure", async () => {
+  it("stops at the page cap, remembers the failure and keeps the pages it read", async () => {
     const { github, calls } = fakeGithub(1000, 1);
     const { store, sync } = setup(github);
     await assert.rejects(sync(NOW - 300 * DAY), (err: HttpError) => err.status === 422 && err.code === "sync_too_large");
     assert.equal(calls.length, MAX_PAGES);
-    assert.equal(store.getRepoState("o/r"), undefined);
+    assert.equal(store.getRepoState("o/r")?.coveredSince, NOW - MAX_PAGES * DAY + 1);
+
     await assert.rejects(sync(NOW - 300 * DAY), (err: HttpError) => err.status === 422);
-    assert.equal(calls.length, MAX_PAGES, "the repeat makes no GitHub call");
+    await sync(NOW - 10 * DAY);
+    assert.equal(calls.length, MAX_PAGES, "the repeat and a shorter period make no GitHub call");
   });
 
   it("writes no state when a page fails", async () => {
