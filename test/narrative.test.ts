@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { APIConnectionTimeoutError, RateLimitError } from "@anthropic-ai/sdk";
+import { APIConnectionTimeoutError, OverloadedError, RateLimitError } from "@anthropic-ai/sdk";
 import type Anthropic from "@anthropic-ai/sdk";
 import { openStore } from "../src/db.ts";
 import { HttpError } from "../src/errors.ts";
@@ -117,22 +117,23 @@ describe("narrative call", () => {
   });
 
   it("maps model failures to clear HTTP errors", async () => {
-    const cases: [() => Anthropic.Message | Promise<Anthropic.Message>, number, string][] = [
+    const cases: [() => Anthropic.Message | Promise<Anthropic.Message>, number, string, number?][] = [
       [() => message({ stop_reason: "refusal", text: "" }), 502, "llm_error"],
       [() => message({ stop_reason: "max_tokens", text: '{"summary":' }), 502, "llm_error"],
       [() => message({ text: "not json" }), 502, "llm_error"],
       [() => message({ text: JSON.stringify({ ...GOOD, confidence: 2 }) }), 502, "llm_error"],
-      [() => Promise.reject(new RateLimitError(429, undefined, "busy", new Headers({ "retry-after": "7" }))), 503, "llm_rate_limited"],
+      [() => Promise.reject(new RateLimitError(429, undefined, "busy", new Headers({ "retry-after": "7" }))), 503, "llm_rate_limited", 7],
+      [() => Promise.reject(new OverloadedError(529, undefined, "overloaded", new Headers())), 503, "llm_rate_limited", 30],
       [() => Promise.reject(new APIConnectionTimeoutError()), 504, "llm_timeout"],
       [() => Promise.reject(new TypeError("boom")), 502, "llm_error"],
     ];
-    for (const [answer, status, code] of cases) {
+    for (const [answer, status, code, retryAfter] of cases) {
       const { narrator: n } = narrator(answer);
       await assert.rejects(n.explain(report(), silentLog), (err: unknown) => {
         assert.ok(err instanceof HttpError);
         assert.equal(err.status, status);
         assert.equal(err.code, code);
-        if (code === "llm_rate_limited") assert.equal(err.retryAfter, 7);
+        assert.equal(err.retryAfter, retryAfter);
         return true;
       });
     }

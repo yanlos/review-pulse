@@ -77,6 +77,18 @@ describe("first review and merge clocks", () => {
   });
 });
 
+describe("end of the window", () => {
+  it("does not count a review after the window ends, in the summary or the audit rows", () => {
+    const ready = W.to - 2 * HOUR;
+    const late = pr({ number: 1, createdAt: ready, reviews: [review("bob", W.to + HOUR)] });
+    const stats = computeReviewFlow([late], W);
+    assert.equal(stats.time_to_first_review.count, 0);
+    assert.equal(stats.time_to_first_review.unreviewed, 1);
+    const rows = pullsReport("o/r", { from: W.from, to: W.to, prevFrom: W.from - 10 * DAY }, [late], NOW).pulls;
+    assert.equal(rows[0]!.first_review_at, null);
+  });
+});
+
 describe("percentiles", () => {
   it("interpolates between ranks", () => {
     assert.equal(quantile([], 0.5), null);

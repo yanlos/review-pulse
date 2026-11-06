@@ -65,11 +65,14 @@ function qualifies(review: ReviewRow, pr: PrRow): boolean {
   return !review.reviewerIsBot && !sameLogin(review.reviewer, pr.author);
 }
 
-function derive(pr: PrRow): Derived {
+// A review counts only before the PR closes and before the window ends. So the current and the
+// previous period give each PR the same chance, and old periods do not collect late reviews.
+function derive(pr: PrRow, end: number): Derived {
   const limit = pr.mergedAt ?? pr.closedAt ?? Infinity;
   let first: number | null = null;
   for (const review of pr.reviews) {
-    if (qualifies(review, pr) && review.submittedAt <= limit && (first === null || review.submittedAt < first)) {
+    const counts = qualifies(review, pr) && review.submittedAt <= limit && review.submittedAt < end;
+    if (counts && (first === null || review.submittedAt < first)) {
       first = review.submittedAt;
     }
   }
@@ -137,7 +140,7 @@ export function computeReviewFlow(prs: PrRow[], w: Window): FlowStats {
       if (inWindow(pr.mergedAt, w)) botMerged++;
       continue;
     }
-    const d = derive(pr);
+    const d = derive(pr, w.to);
     if (inWindow(pr.createdAt, w)) {
       opened++;
       bump(pr.author, "opened");
@@ -221,7 +224,7 @@ export function reviewFlowReport(repo: string, period: Period, prs: PrRow[], dat
     data_as_of: iso(dataAsOf),
     current: computeReviewFlow(prs, { from: period.from, to: period.to }),
     previous: computeReviewFlow(prs, { from: period.prevFrom, to: period.from }),
-    prs_with_truncated_reviews: prs.filter((pr) => pr.reviewsTruncated).length,
+    prs_with_truncated_reviews: prs.filter((pr) => pr.reviewsTruncated && !pr.authorIsBot && pr.createdAt < period.to).length,
   };
 }
 
@@ -236,7 +239,7 @@ export function pullsReport(repo: string, period: Period, prs: PrRow[], dataAsOf
       merge: inWindow(pr.mergedAt, w),
     };
     if (!flags.opened && !flags.first_review && !flags.merge) continue;
-    const d = derive(pr);
+    const d = derive(pr, w.to);
     pulls.push({
       number: pr.number,
       url: `https://github.com/${repo}/pull/${pr.number}`,
