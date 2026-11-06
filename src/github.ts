@@ -123,7 +123,8 @@ export function createGithubClient(options: { token: string; fetch?: typeof fetc
       if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
         throw new HttpError(504, "upstream_timeout", "GitHub did not answer in time.");
       }
-      throw new Retryable("network error");
+      const code = err instanceof Error && err.cause instanceof Error ? (err.cause as { code?: string }).code : undefined;
+      throw new Retryable(`network error ${code ?? ""}`.trim());
     }
 
     if (!res.ok) throw statusError(res);
@@ -132,7 +133,9 @@ export function createGithubClient(options: { token: string; fetch?: typeof fetc
     if (errors.success) throw graphqlError(errors.data.errors.map((e) => e.type), res.headers);
 
     const page = PageBody.safeParse(body);
-    if (!page.success) throw new HttpError(502, "upstream_error", "GitHub sent a response in an unexpected format.");
+    if (!page.success) {
+      throw new HttpError(502, "upstream_error", "GitHub sent a response in an unexpected format.", undefined, "bad shape");
+    }
     const { rateLimit, repository } = page.data.data;
     if (repository === null) throw notFound();
 
@@ -156,7 +159,9 @@ export function createGithubClient(options: { token: string; fetch?: typeof fetc
       try {
         return await attempt(owner, name, cursor, RETRY_PAGE_SIZE);
       } catch (err) {
-        if (err instanceof Retryable) throw new HttpError(502, "upstream_error", "GitHub did not answer correctly.");
+        if (err instanceof Retryable) {
+          throw new HttpError(502, "upstream_error", "GitHub did not answer correctly.", undefined, err.message);
+        }
         throw err;
       }
     },
@@ -170,7 +175,7 @@ function statusError(res: Response): Error {
   if (rateLimited) return rateLimitedError(res.headers);
   if (res.status === 401 || res.status === 403) return authError();
   if (res.status === 502 || res.status === 503 || res.status === 504) return new Retryable(`status ${res.status}`);
-  return new HttpError(502, "upstream_error", "GitHub did not answer correctly.");
+  return new HttpError(502, "upstream_error", "GitHub did not answer correctly.", undefined, `status ${res.status}`);
 }
 
 function graphqlError(types: (string | undefined)[], headers: Headers): Error {

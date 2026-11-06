@@ -4,12 +4,15 @@ export class HttpError extends Error {
   readonly status: number;
   readonly code: string;
   readonly retryAfter: number | undefined;
+  // For the server log only. Never sent to the client.
+  readonly reason: string | undefined;
 
-  constructor(status: number, code: string, detail: string, retryAfter?: number) {
+  constructor(status: number, code: string, detail: string, retryAfter?: number, reason?: string) {
     super(detail);
     this.status = status;
     this.code = code;
     this.retryAfter = retryAfter;
+    this.reason = reason;
   }
 }
 

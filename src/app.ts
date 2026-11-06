@@ -47,7 +47,7 @@ export async function buildApp(deps: AppDeps) {
 
   app.setErrorHandler((err: Error & { statusCode?: number }, req, reply) => {
     if (err instanceof HttpError) {
-      if (err.status >= 500) req.log.warn({ code: err.code }, err.message);
+      if (err.status >= 500) req.log.warn({ code: err.code, reason: err.reason }, err.message);
       return sendProblem(reply, req, err.status, err.code, err.message, err.retryAfter);
     }
     if (err.statusCode !== undefined && err.statusCode >= 400 && err.statusCode < 500) {
