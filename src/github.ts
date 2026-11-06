@@ -13,6 +13,7 @@ export const QUERY = `
 query ReviewPulse($owner: String!, $name: String!, $first: Int!, $cursor: String) {
   rateLimit { cost remaining resetAt }
   repository(owner: $owner, name: $name) {
+    isPrivate
     pullRequests(first: $first, after: $cursor, orderBy: {field: UPDATED_AT, direction: DESC}) {
       pageInfo { hasNextPage endCursor }
       nodes {
@@ -85,6 +86,7 @@ const PageBody = z.object({
     rateLimit: z.object({ cost: z.number(), remaining: z.number() }).nullable(),
     repository: z
       .object({
+        isPrivate: z.boolean(),
         pullRequests: z.object({
           pageInfo: z.object({ hasNextPage: z.boolean(), endCursor: z.string().nullable() }),
           nodes: z.array(PrNode),
@@ -118,7 +120,7 @@ export function createGithubClient(options: { token: string; fetch?: typeof fetc
         redirect: "error",
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
-      body = res.ok ? await res.json() : undefined;
+      body = res.ok ? await res.json() : await res.text();
     } catch (err) {
       if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
         throw new HttpError(504, "upstream_timeout", "GitHub did not answer in time.");
@@ -127,7 +129,7 @@ export function createGithubClient(options: { token: string; fetch?: typeof fetc
       throw new Retryable(`network error ${code ?? ""}`.trim());
     }
 
-    if (!res.ok) throw statusError(res);
+    if (!res.ok) throw statusError(res, String(body));
 
     const errors = ErrorBody.safeParse(body);
     if (errors.success) throw graphqlError(errors.data.errors.map((e) => e.type), res.headers);
@@ -137,7 +139,8 @@ export function createGithubClient(options: { token: string; fetch?: typeof fetc
       throw new HttpError(502, "upstream_error", "GitHub sent a response in an unexpected format.", undefined, "bad shape");
     }
     const { rateLimit, repository } = page.data.data;
-    if (repository === null) throw notFound();
+    // The service is for public data only, even when the token can read more.
+    if (repository === null || repository.isPrivate) throw notFound();
 
     return {
       rows: repository.pullRequests.nodes.map(toRow),
@@ -168,10 +171,11 @@ export function createGithubClient(options: { token: string; fetch?: typeof fetc
   };
 }
 
-function statusError(res: Response): Error {
+function statusError(res: Response, text: string): Error {
   const rateLimited =
-    (res.status === 403 || res.status === 429) &&
-    (res.headers.get("x-ratelimit-remaining") === "0" || res.headers.has("retry-after"));
+    res.status === 429 ||
+    (res.status === 403 &&
+      (res.headers.get("x-ratelimit-remaining") === "0" || res.headers.has("retry-after") || /rate limit/i.test(text)));
   if (rateLimited) return rateLimitedError(res.headers);
   if (res.status === 401 || res.status === 403) return authError();
   if (res.status === 502 || res.status === 503 || res.status === 504) return new Retryable(`status ${res.status}`);

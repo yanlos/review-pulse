@@ -109,6 +109,9 @@ describe("GitHub error mapping", () => {
     await expectHttpError(notFound.client.fetchPage("o", "r", null), 404, "repo_not_found");
     const nullRepo = client(() => json({ data: { rateLimit: null, repository: null } }));
     await expectHttpError(nullRepo.client.fetchPage("o", "r", null), 404, "repo_not_found");
+    const page = graphqlPage([]);
+    page.data.repository.isPrivate = true;
+    await expectHttpError(client(() => json(page)).client.fetchPage("o", "r", null), 404, "repo_not_found");
   });
 
   it("maps rate limits to 503 with Retry-After", async () => {
@@ -127,10 +130,16 @@ describe("GitHub error mapping", () => {
     });
     const primary = client(() => json({}, 403, { "x-ratelimit-remaining": "0" }));
     await expectHttpError(primary.client.fetchPage("o", "r", null), 503, "upstream_rate_limited");
+    const noHeaders = client(() => json({ message: "You have exceeded a secondary rate limit." }, 403));
+    await expectHttpError(noHeaders.client.fetchPage("o", "r", null), 503, "upstream_rate_limited");
+    const tooMany = client(() => json({}, 429));
+    await assert.rejects(tooMany.client.fetchPage("o", "r", null), (err: HttpError) => err.status === 503 && err.retryAfter === 60);
   });
 
   it("maps a bad token to upstream_auth_failed", async () => {
     await expectHttpError(client(() => json({}, 401)).client.fetchPage("o", "r", null), 502, "upstream_auth_failed");
+    const noAccess = client(() => json({ message: "Resource not accessible by personal access token" }, 403));
+    await expectHttpError(noAccess.client.fetchPage("o", "r", null), 502, "upstream_auth_failed");
     const forbidden = client(() => json({ errors: [{ type: "FORBIDDEN" }] }));
     await expectHttpError(forbidden.client.fetchPage("o", "r", null), 502, "upstream_auth_failed");
   });

@@ -71,7 +71,7 @@ export function graphqlPage(nodes: RawPrNode[], hasNextPage = false, endCursor: 
   return {
     data: {
       rateLimit: { cost: 1, remaining: 4999, resetAt: iso(NOW + HOUR) },
-      repository: { pullRequests: { pageInfo: { hasNextPage, endCursor }, nodes } },
+      repository: { isPrivate: false, pullRequests: { pageInfo: { hasNextPage, endCursor }, nodes } },
     },
   };
 }
