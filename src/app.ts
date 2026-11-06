@@ -38,6 +38,11 @@ export async function buildApp(deps: AppDeps) {
     },
     genReqId: () => randomUUID(),
     routerOptions: { maxParamLength: 256 },
+    // Bad percent-encoding or a very long path segment fails in the router, before the normal error handler.
+    frameworkErrors: (_err, req, reply) => {
+      reply.headers(SECURITY_HEADERS);
+      return sendProblem(reply, req, 400, "invalid_parameter", "The URL is not valid.");
+    },
   });
 
   app.addHook("onSend", async (_req, reply, payload) => {

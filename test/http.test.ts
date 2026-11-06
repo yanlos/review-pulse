@@ -39,6 +39,7 @@ const SAMPLE_PAGE = graphqlPage([
     reviews: [{ login: "alice", at: NOW - 4 * DAY + HOUR }],
     mergedAt: NOW - 3 * DAY,
   }),
+  node({ number: 6, createdAt: NOW - 40 * DAY, mergedAt: NOW - 40 * DAY + 2 * HOUR, reviews: [{ login: "bob", at: NOW - 40 * DAY + HOUR }] }),
 ]);
 
 type Options = {
@@ -92,6 +93,12 @@ describe("input validation", () => {
       assert.equal(res.headers["content-type"], "application/problem+json; charset=utf-8", url);
       assert.equal(res.json().code, "invalid_parameter", url);
     }
+    for (const url of ["/api/repos/%E0%A4%A/x/review-flow", `/api/repos/a/${"b".repeat(300)}/review-flow`]) {
+      const res = await app.inject({ url });
+      assert.equal(res.statusCode, 400, url);
+      assert.equal(res.json().code, "invalid_parameter", url);
+      assert.equal(res.headers["x-content-type-options"], "nosniff", url);
+    }
     // The router resolves dot segments first, so these paths match no route.
     for (const url of ["/api/repos/a/../review-flow", "/api/repos/a/%2E%2E/review-flow", "/api/repos/%2E%2E/x/review-flow", "/api/repos/a/%2E/review-flow"]) {
       const res = await app.inject({ url });
@@ -118,6 +125,9 @@ describe("review flow", () => {
     assert.equal(body.current.reviewers.for_half, 1);
     assert.deepEqual(body.current.reviewers.top[0], { login: "bob", prs_reviewed: 2, share: 0.5 });
     assert.deepEqual(body.current.excluded, { bot_prs_opened: 1, bot_prs_merged: 1 });
+    assert.deepEqual(body.previous_period, { from: "2026-09-08T00:00:00.000Z", to: "2026-10-08T00:00:00.000Z" });
+    assert.deepEqual(body.previous.pull_requests, { opened: 1, merged: 1, closed_unmerged: 0 });
+    assert.equal(body.previous.time_to_first_review.median_hours, 1);
 
     const pulls = (await app.inject({ url: `${BASE}/pulls` })).json();
     assert.deepEqual(
