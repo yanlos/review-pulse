@@ -58,7 +58,6 @@ export type LlmClient = { messages: Pick<Anthropic["messages"], "create"> };
 
 export type Narrator = { explain(report: ReviewFlowReport, log: FastifyBaseLogger): Promise<Narrative> };
 
-// Keys are dotted paths into the review-flow response, for example "current.reviewers.top.0.share".
 export function toFacts(report: Pick<ReviewFlowReport, "current" | "previous">): Facts {
   const facts: Facts = {};
   const visit = (value: unknown, path: string): void => {
@@ -168,7 +167,6 @@ export function createNarrator(deps: { client: LlmClient; model: string; store: 
         };
       }
 
-      // data_as_of is not in the content, so a new sync with the same numbers uses the cached narrative.
       const content = JSON.stringify({
         repo: report.repo,
         period: report.period,

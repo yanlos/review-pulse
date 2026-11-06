@@ -4,7 +4,7 @@ export class HttpError extends Error {
   readonly status: number;
   readonly code: string;
   readonly retryAfter: number | undefined;
-  // For the server log only. Never sent to the client.
+  // Logged only, never sent to the client.
   readonly reason: string | undefined;
 
   constructor(status: number, code: string, detail: string, retryAfter?: number, reason?: string) {

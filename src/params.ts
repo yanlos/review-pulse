@@ -22,7 +22,7 @@ const PeriodQuery = z.strictObject({
 
 export type RepoRef = { owner: string; name: string; key: string };
 
-// All times are epoch ms in UTC. The window is [from, to): "to" is the start of the day after the last day.
+// Epoch ms in UTC. "to" is exclusive.
 export type Period = { from: number; to: number; prevFrom: number };
 
 export function parseRepo(params: unknown): RepoRef {

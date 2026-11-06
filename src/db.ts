@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS narratives (
 );
 `;
 
-// covered_since: every PR with updated_at >= covered_since is stored, current as of synced_at.
+// Every PR updated at or after covered_since is stored, as of synced_at.
 export type RepoState = { coveredSince: number; syncedAt: number };
 
 type PrRecord = {

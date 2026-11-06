@@ -4,7 +4,6 @@ import type { Period } from "./params.ts";
 const HOUR_MS = 3_600_000;
 export const TOP_N = 10;
 
-// [from, to): an event at "from" is in the window, an event at "to" is not.
 export type Window = { from: number; to: number };
 
 export type FlowStats = {
@@ -65,8 +64,7 @@ function qualifies(review: ReviewRow, pr: PrRow): boolean {
   return !review.reviewerIsBot && !sameLogin(review.reviewer, pr.author);
 }
 
-// A review counts only before the PR closes and before the window ends. So the current and the
-// previous period give each PR the same chance, and old periods do not collect late reviews.
+// Reviews only count before the PR closes and before the window ends.
 function derive(pr: PrRow, end: number): Derived {
   const limit = pr.mergedAt ?? pr.closedAt ?? Infinity;
   let first: number | null = null;
@@ -78,13 +76,12 @@ function derive(pr: PrRow, end: number): Derived {
   }
   return {
     firstReviewAt: first,
-    // The clock starts when the PR is ready for review, so time as a draft does not count.
     firstReviewMs: first !== null && pr.readyAt !== null ? Math.max(0, first - pr.readyAt) : null,
     mergeMs: pr.mergedAt !== null ? Math.max(0, pr.mergedAt - (pr.readyAt ?? pr.createdAt)) : null,
   };
 }
 
-// Linear interpolation between the closest ranks (the same as PERCENTILE.INC in a spreadsheet).
+// Same as PERCENTILE.INC.
 export function quantile(sorted: number[], p: number): number | null {
   if (sorted.length === 0) return null;
   const h = (sorted.length - 1) * p;

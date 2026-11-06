@@ -12,7 +12,6 @@ const EnvSchema = z.object({
 
 export type Config = z.infer<typeof EnvSchema>;
 
-// The error message contains variable names only, never values.
 export function loadConfig(env: Record<string, string | undefined>): Config {
   const result = EnvSchema.safeParse(env);
   if (!result.success) {

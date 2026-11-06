@@ -139,7 +139,7 @@ export function createGithubClient(options: { token: string; fetch?: typeof fetc
       throw new HttpError(502, "upstream_error", "GitHub sent a response in an unexpected format.", undefined, "bad shape");
     }
     const { rateLimit, repository } = page.data.data;
-    // The service is for public data only, even when the token can read more.
+    // Public repos only, even if the token can read more.
     if (repository === null || repository.isPrivate) throw notFound();
 
     return {
@@ -186,7 +186,7 @@ function graphqlError(types: (string | undefined)[], headers: Headers): Error {
   if (types.includes("NOT_FOUND")) return notFound();
   if (types.includes("RATE_LIMITED")) return rateLimitedError(headers);
   if (types.includes("FORBIDDEN")) return authError();
-  // GitHub reports query timeouts as errors with no known type. A smaller page usually works.
+  // GitHub reports query timeouts without a type. A smaller page usually works.
   return new Retryable("graphql error");
 }
 
@@ -226,7 +226,6 @@ function readyAt(node: ParsedNode): number | null {
 function toRow(node: ParsedNode): PrRow {
   const reviews: ReviewRow[] = [];
   for (const review of node.reviews.nodes) {
-    // A pending review has no submittedAt. It is not visible to other people yet.
     if (review === null || review.submittedAt === null) continue;
     reviews.push({
       reviewer: cleanLogin(review.author),

@@ -5,7 +5,7 @@ import { PAGE_SIZE, type GithubClient } from "./github.ts";
 import type { RepoRef } from "./params.ts";
 
 export const SYNC_TTL_MS = 5 * 60_000;
-// GitHub and this server use different clocks. The overlap makes sure that no update falls between two syncs.
+// Covers clock skew between GitHub and this server.
 const OVERLAP_MS = 5 * 60_000;
 export const MAX_PAGES = 40;
 
@@ -37,7 +37,6 @@ export function createSyncer(deps: { store: Store; github: GithubClient; now: ()
     for (let page = 1; ; page++) {
       if (page > MAX_PAGES) {
         failedWalks.set(repo.key, { stopAt, at: now() });
-        // The stored pages still cover everything updated after the oldest row, so a shorter period can use them.
         if (state === undefined) store.setRepoState(repo.key, { coveredSince: oldestSeen + 1, syncedAt: startedAt });
         throw tooLarge(stopAt);
       }
@@ -61,7 +60,6 @@ export function createSyncer(deps: { store: Store; github: GithubClient; now: ()
       cursor = result.endCursor;
     }
 
-    // Keep the old coverage only when this walk reached back to the last sync.
     const coveredSince = covered && stopAt > since ? covered.coveredSince : since;
     store.setRepoState(repo.key, { coveredSince, syncedAt: startedAt });
     failedWalks.delete(repo.key);

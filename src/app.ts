@@ -38,7 +38,6 @@ export async function buildApp(deps: AppDeps) {
     },
     genReqId: () => randomUUID(),
     routerOptions: { maxParamLength: 256 },
-    // Bad percent-encoding or a very long path segment fails in the router, before the normal error handler.
     frameworkErrors: (_err, req, reply) => {
       reply.headers(SECURITY_HEADERS);
       return sendProblem(reply, req, 400, "invalid_parameter", "The URL is not valid.");
@@ -102,7 +101,7 @@ export async function buildApp(deps: AppDeps) {
     return pullsReport(repo.key, period, prs, dataAsOf);
   });
 
-  // Each call can cost money, so HEAD is off and the rate limit is lower.
+  // Costs money, so no HEAD and a lower limit.
   app.get(
     `${ROUTE}/narrative`,
     { exposeHeadRoute: false, config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
