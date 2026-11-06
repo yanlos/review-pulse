@@ -41,7 +41,7 @@ You need Docker with Docker Compose and a GitHub token.
 
 8. Open http://localhost:3000 to use the web page.
 
-The first request for a repository gets data from GitHub. This takes some seconds. Requests in the next 5 minutes use only the local data.
+The first request for a repository gets data from GitHub. This takes some seconds. For the next 5 minutes, requests for that repository use only the local data, if their period does not start earlier.
 
 ## Run without Docker
 
@@ -82,9 +82,11 @@ All routes use `GET`. The query parameters `from` and `to` are optional. They ar
 | Route | Returns |
 |---|---|
 | `/api/repos/{owner}/{repo}/review-flow` | The review flow numbers for the period and the previous period |
-| `/api/repos/{owner}/{repo}/review-flow/pulls` | One row for each PR behind the numbers, for audits |
+| `/api/repos/{owner}/{repo}/review-flow/pulls` | One row for each PR opened, ready or merged in the period. Use the rows to check the counts and the times |
 | `/api/repos/{owner}/{repo}/review-flow/narrative` | A short explanation from Claude, with checked evidence |
 | `/healthz` | `{"status":"ok"}` |
+
+The service answers only for public repositories. For a private repository, it returns 404, also when the token can read it.
 
 Rules for the period:
 
@@ -148,10 +150,10 @@ Errors use `application/problem+json` (RFC 9457):
 
 | Status | `code` | Cause |
 |---|---|---|
-| 400 | `invalid_parameter` | Incorrect owner, repository name, date or period |
+| 400 | `invalid_parameter` | Incorrect owner, repository name, date, period or URL |
 | 404 | `repo_not_found` | GitHub has no public repository with this name |
 | 404 | `not_found` | No route has this path |
-| 422 | `sync_too_large` | More than 2,000 PRs changed in the period. Use a shorter or more recent period |
+| 422 | `sync_too_large` | More than 2,000 PRs changed between the start of the previous period and now. Use a more recent period |
 | 429 | `rate_limited` | More than 60 requests in a minute, or more than 10 narrative requests. See `Retry-After` |
 | 502 | `upstream_error` | GitHub sent an error or an unexpected response |
 | 502 | `upstream_auth_failed` | GitHub did not accept the token |
@@ -160,6 +162,7 @@ Errors use `application/problem+json` (RFC 9457):
 | 503 | `llm_not_configured` | The server has no `ANTHROPIC_API_KEY` |
 | 503 | `llm_rate_limited` | Claude is busy. See `Retry-After` |
 | 504 | `upstream_timeout`, `llm_timeout` | GitHub or Claude did not answer in time |
+| 500 | `internal` | An unexpected error on the server. The log has the details |
 
 ## Metric definitions
 
@@ -169,18 +172,18 @@ All times are UTC. A period starts at 00:00 on `from` and ends before 00:00 on t
 - **Review.** A submitted PR review of any state counts: approved, changes requested, commented or dismissed. A plain issue comment is not a review. The PR author cannot review their own PR.
 - **Ready time.** A PR is ready when it opens as a non-draft PR, or when it leaves draft for the first time.
 - **`pull_requests`.** `opened` counts PRs created in the period. `merged` counts PRs merged in the period. `closed_unmerged` counts PRs closed in the period without a merge.
-- **`time_to_first_review`.** This uses the PRs that became ready in the period. The time is from ready time to the first review. A review before ready time gives 0 hours. A review after the PR closed does not count. `count` is the number of reviewed PRs. `unreviewed` is the number of PRs with no review. The median and p90 use the reviewed PRs only.
+- **`time_to_first_review`.** This uses the PRs that became ready in the period. The time is from ready time to the first review. A review before ready time gives 0 hours. A review after the PR closed does not count. A review after the end of the period does not count. This gives the PRs in the current and the previous period the same chance. `count` is the number of reviewed PRs. `unreviewed` is the number of PRs with no review. The median and p90 use the reviewed PRs only.
 - **`time_to_merge`.** This uses the PRs merged in the period. The time is from ready time to merge. `merged_without_review` counts merges with no review before the merge.
 - **`reviewers`.** The unit is one reviewer on one PR. Five review rounds by one person on one PR count one time. `review_pairs` is the total of these units in the period. `share` is the part of the total for one reviewer. `for_half` is the smallest number of reviewers who together did half of all reviews.
 - **`contributors`.** PRs merged and PRs opened in the period, for each author.
 - **Percentiles.** The median and p90 use linear interpolation. This is the same as `PERCENTILE.INC` in a spreadsheet.
-- **Deleted users.** GitHub shows deleted users as `ghost`. Their PRs and reviews count in the totals and the times. They are not in the top lists.
+- **Deleted users.** GitHub shows deleted users as `ghost`. Their PRs count in `pull_requests`, and their reviews count in the times. They are not in `reviewers` or `contributors`, so `review_pairs` and `share` do not include their reviews.
 - **More than 100 reviews.** The service reads the first 100 reviews of each PR. `prs_with_truncated_reviews` counts PRs with more. The first review time is still correct for these PRs.
 
 ## Check the numbers
 
-1. Compare the PR counts with GitHub search. For the period 2026-10-08 to 2026-11-06, search for `repo:fastify/fastify is:pr created:2026-10-08..2026-11-06`. The result must be equal to `opened + excluded.bot_prs_opened`.
-2. Do the same check for merges. Search for `repo:fastify/fastify is:pr merged:2026-10-08..2026-11-06`. The result must be equal to `merged + excluded.bot_prs_merged`.
+1. Compare the PR counts with GitHub search. For the period 2026-10-08 to 2026-11-06, search for `repo:fastify/fastify is:pr created:2026-10-08T00:00:00Z..2026-11-06T23:59:59Z`. The result must be equal to `opened + excluded.bot_prs_opened`.
+2. Do the same check for merges. Search for `repo:fastify/fastify is:pr merged:2026-10-08T00:00:00Z..2026-11-06T23:59:59Z`. The result must be equal to `merged + excluded.bot_prs_merged`.
 3. Get the rows behind the times:
 
    ```bash
@@ -188,7 +191,7 @@ All times are UTC. A period starts at 00:00 on `from` and ends before 00:00 on t
    ```
 
 4. Open some PRs from the rows on GitHub. Compare the first review time and the merge time with the PR page.
-5. Calculate the median of `hours_to_first_review` for the rows with `in.first_review` equal to `true`. Do not use the rows where the value is `null`. The result must be equal to `current.time_to_first_review.median_hours`.
+5. Calculate the median of `hours_to_first_review` for the rows with `in.first_review` equal to `true`. Do not use the rows where the value is `null`. Round the result to 2 decimal places. It must be equal to `current.time_to_first_review.median_hours`. A difference of 0.01 is possible, because each row is rounded to 4 decimal places.
 
 ## Tests
 

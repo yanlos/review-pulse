@@ -17,11 +17,12 @@ The wait for a first review is the delay that a contributor feels most. A long w
 ## Decisions and trade-offs
 
 - **GraphQL, not REST.** One GraphQL call gets 50 PRs and their reviews. With REST, each PR needs one more call for its reviews.
-- **Sync on request, not a background worker.** One curl call gives a result, with no job to poll. Fixed limits keep the cost small: 40 pages (2,000 PRs) for each sync, a period of 90 days or less, and a start date in the last 365 days. A request above the page limit gets 422 at once, not a long wait. A repeat of that request in the next 5 minutes makes no GitHub call.
+- **Sync on request, not a background worker.** One curl call gives a result, with no job to poll. Fixed limits keep the cost small: 40 pages (2,000 PRs) for each sync, a period of 90 days or less, and a start date in the last 365 days. The first request above the page limit gets 422 after 40 pages. The service keeps those pages, so a shorter, more recent period can use them with no new call. A repeat of the failed request in the next 5 minutes gets 422 with no GitHub call.
 - **Incremental sync.** After the first sync, the service reads PRs in order of last update. It stops at the time of the last sync, minus 5 minutes. The 5 minutes cover a clock difference between GitHub and this server.
 - **SQLite with better-sqlite3.** The queries are small and indexed, so the synchronous driver does not block the event loop for long. A page write is one transaction.
 - **A GitHub rate limit gives 503, not 429.** The client did not go over our limit. Our own limit gives 429.
 - **The narrative is a GET.** It reads a derived resource, and the cache makes it repeatable. HEAD is off on this route, and its rate limit is lower (10 for each minute), because each new call costs money.
+- **Reviews count only before the end of the period.** Without this rule, PRs in the previous period have more time to collect late reviews than PRs in the current period. Then the comparison looks worse than it is.
 - **Only cited evidence is checked.** The server does not parse numbers in the summary text. The prompt tells the model to use only numbers from the facts.
 - **No server-side refusal fallback.** It needs a beta API surface, and the input is only numbers and logins. A refusal gives 502 `llm_error`.
 - **No build step for the server.** Node 22.18 runs TypeScript directly. `tsc` only checks types.
@@ -35,6 +36,7 @@ The wait for a first review is the delay that a contributor feels most. A long w
 - The service reads the first 100 reviews of each PR. The response counts the PRs with more.
 - A login that does not match GitHub's login rules counts as a deleted user. This makes sure that only safe strings go to the model.
 - Times are wall-clock hours. They do not remove nights or weekends.
+- An old period costs more than a recent one. The sync reads every PR that changed from now back to the start of the previous period.
 
 ## Things I chose not to do
 
@@ -45,6 +47,7 @@ The wait for a first review is the delay that a contributor feels most. A long w
 - Authentication and a repository allowlist. This is a local tool. An allowlist is the first change before the service is shared.
 - Old data when GitHub fails. Now the service returns 502 or 503.
 - An evaluation suite for the prompt.
+- One shared model call for identical narrative requests that arrive at the same time. The rate limit and the cache keep the cost small.
 
 ## What I would do next with one more day
 
